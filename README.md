@@ -296,9 +296,9 @@ Se o sensor falhar na inicializacao:
 Falha VL53L0X
 ```
 
-## Observacao importante sobre o estado atual do codigo
+## Observacao sobre organizacao do codigo
 
-No arquivo `code.cpp`, algumas constantes sao declaradas duas vezes:
+As configuracoes sensiveis sao definidas em `secrets.h` e expostas ao firmware em variaveis globais no `code.cpp`:
 
 ```cpp
 const char* ssid = WIFI_SSID;
@@ -307,9 +307,7 @@ const char* mqtt_user = MQTT_USER;
 const char* mqtt_password = MQTT_PASSWORD;
 ```
 
-Elas aparecem no inicio do arquivo e novamente nas secoes `WIFI` e `HIVEMQ`. Em C++, isso causa erro de redefinicao durante a compilacao.
-
-Para compilar, mantenha apenas uma declaracao de cada uma dessas variaveis.
+Essa decisao centraliza as credenciais em um unico arquivo ignorado pelo Git e deixa o restante do firmware lendo nomes claros e estaveis.
 
 ## Calibracao
 
@@ -339,7 +337,6 @@ Ajuste recomendado:
 
 ## Possiveis evolucoes
 
-- Remover a duplicidade de declaracoes em `code.cpp`.
 - Trocar `setInsecure()` por validacao de certificado com CA.
 - Publicar tambem status de Wi-Fi, RSSI e uptime.
 - Parametrizar `distanciaCheio`, `distanciaVazio` e offset por constantes globais.
