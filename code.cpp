@@ -5,11 +5,7 @@
 #include <VL53L0X.h>
 #include "secrets.h"
 
-const char* ssid = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
 
-const char* mqtt_user = MQTT_USER;
-const char* mqtt_password = MQTT_PASSWORD;
 // ===== SENSOR =====
 VL53L0X sensor;
 
