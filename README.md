@@ -97,6 +97,16 @@ Crie um arquivo `secrets.h` na raiz do projeto com este formato:
 #endif
 ```
 
+Para o dashboard `teste.html`, gere um arquivo local `secrets.js` a partir do mesmo `secrets.h`:
+
+```powershell
+.\scripts\generate-dashboard-config.ps1
+```
+
+O arquivo `secrets.js` tambem fica no `.gitignore`. Publique apenas `secrets.example.h` e `secrets.js.example` no repositorio.
+
+Observacao: credenciais usadas diretamente no navegador podem ser vistas por quem abrir a pagina. Para um site publico real, use credenciais MQTT somente leitura ou um backend/proxy autenticado.
+
 ## Configuração MQTT
 
 O firmware publica no tópico:
