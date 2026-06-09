@@ -1,0 +1,1014 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartWater | Água da casa</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #000000;
+    --surface: #0B0C0A;
+    --surface2: #11130f;
+    --border: rgba(255,255,255,0.10);
+    --border2: rgba(255,255,255,0.20);
+    --text: #f6f7f2;
+    --muted: #8b9286;
+    --accent: #00E676;
+
+    --ok-start: #00E676;
+    --ok-end: #00a957;
+    --ok-glow: rgba(0,230,118,0.25);
+
+    --warn-start: #fbbf24;
+    --warn-end: #f59e0b;
+    --warn-glow: rgba(251,191,36,0.35);
+
+    --crit-start: #f87171;
+    --crit-end: #ef4444;
+    --crit-glow: rgba(239,68,68,0.45);
+  }
+
+  body {
+    background: var(--bg);
+    min-height: 100vh;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text);
+    overflow-x: hidden;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent 85%);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    padding: 20px;
+    width: min(100% - 24px, 1160px);
+    min-height: calc(100vh - 24px);
+    margin: 12px auto;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    gap: 16px;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  /* === HEADER === */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-icon {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .brand-icon svg { width: 18px; height: 18px; fill: #000; }
+
+  .brand-name {
+    font-size: clamp(0.85rem, 2vw, 1.05rem);
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--text);
+    text-transform: uppercase;
+  }
+
+  .connection-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    outline: 3px solid rgba(34,197,94,0.2);
+    animation: pulse-dot 2s infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { outline-width: 3px; outline-color: rgba(34,197,94,0.2); }
+    50% { outline-width: 6px; outline-color: rgba(34,197,94,0.1); }
+  }
+
+  .connection-dot.offline { background: #6b7280; outline: 3px solid rgba(107,114,128,0.2); animation: none; }
+
+  .mode-toggle {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--border2);
+    background: #000000;
+  }
+
+  .mode-btn {
+    appearance: none;
+    border: 0;
+    border-right: 1px solid var(--border2);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.7rem;
+    line-height: 1;
+    min-width: 64px;
+    padding: 10px 12px;
+    text-transform: uppercase;
+  }
+
+  .mode-btn:last-child {
+    border-right: 0;
+  }
+
+  .mode-btn.active {
+    background: var(--accent);
+    color: #000000;
+    font-weight: 700;
+  }
+
+  .mode-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* === CLIENTE === */
+  .client-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .avatar {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.9rem; color: #000;
+    flex-shrink: 0;
+  }
+
+  .client-info { flex: 1; }
+  .client-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0; }
+  .client-name { font-size: 1rem; font-weight: 600; color: var(--text); }
+
+  .client-id-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    background: rgba(255,255,255,0.04);
+    padding: 4px 8px;
+    border-radius: 0;
+    border: 1px solid var(--border);
+    overflow-wrap: anywhere;
+  }
+
+  /* === CAIXA D'ÁGUA === */
+  .tank-wrapper {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: center;
+    background: #000000;
+    border: 1px solid var(--border);
+    padding: 18px;
+    min-height: 308px;
+  }
+
+  .tank-visual {
+    flex-shrink: 0;
+    position: relative;
+    width: clamp(138px, 38vw, 260px);
+    height: clamp(236px, 56vw, 420px);
+    max-height: 420px;
+  }
+
+  /* Estrutura SVG da caixa */
+  .tank-svg {
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+
+  /* === MEDIDOR LATERAL === */
+  .tank-gauge {
+    flex: 1;
+    max-width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 10px;
+  }
+
+  .gauge-tick {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    position: relative;
+  }
+
+  .gauge-tick::before {
+    content: '';
+    width: 10px;
+    height: 1px;
+    background: var(--border2);
+    flex-shrink: 0;
+  }
+
+  .gauge-tick.active { color: var(--text); font-weight: 600; }
+  .gauge-tick.active::before { background: currentColor; width: 16px; }
+
+  /* Escala visual */
+  .gauge-scale {
+    position: absolute;
+    left: -4px;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    background: var(--surface2);
+    border-radius: 0;
+    overflow: hidden;
+  }
+
+  .gauge-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: linear-gradient(to top, var(--ok-end), var(--ok-start));
+    border-radius: 0;
+    transition: height 2s cubic-bezier(0.4, 0, 0.2, 1), background 1s;
+  }
+
+  /* === STATS === */
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 14px;
+    text-align: left;
+    min-width: 0;
+  }
+
+  .stat-value {
+    font-size: clamp(1.15rem, 4vw, 1.8rem);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* === ALERTA === */
+  .alert-bar {
+    background: rgba(34,197,94,0.08);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 0;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.5s;
+  }
+
+  .alert-bar.warn {
+    background: rgba(251,191,36,0.08);
+    border-color: rgba(251,191,36,0.25);
+  }
+
+  .alert-bar.crit {
+    background: rgba(239,68,68,0.08);
+    border-color: rgba(239,68,68,0.3);
+    animation: border-pulse 1.5s infinite;
+  }
+
+  @keyframes border-pulse {
+    50% { border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.12); }
+  }
+
+  .alert-icon {
+    width: 32px; height: 32px;
+    border-radius: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 1rem;
+    background: rgba(34,197,94,0.15);
+    color: #22c55e;
+    transition: all 0.5s;
+  }
+
+  .alert-bar.warn .alert-icon { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .alert-bar.crit .alert-icon { background: rgba(239,68,68,0.15); color: #f87171; }
+
+  .alert-text { flex: 1; }
+  .alert-title { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+  .alert-sub { font-size: 0.7rem; color: var(--muted); }
+
+  .alert-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #22c55e;
+    transition: color 0.5s;
+  }
+
+  .alert-bar.warn .alert-pct { color: #fbbf24; }
+  .alert-bar.crit .alert-pct { color: #f87171; }
+
+  /* === FOOTER === */
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .footer-left { font-size: 0.7rem; color: var(--muted); }
+  .footer-right {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  /* === LAST UPDATED === */
+  .last-updated {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 8px;
+    opacity: 0.6;
+  }
+
+  @media (min-width: 760px) {
+    body {
+      display: grid;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: min(100%, 1160px);
+      min-height: min(760px, calc(100vh - 48px));
+      margin: 0 auto;
+      padding: clamp(24px, 3vw, 36px);
+      grid-template-columns: minmax(360px, 1.35fr) minmax(300px, 0.9fr);
+      grid-template-areas:
+        "header header"
+        "client client"
+        "tank stats"
+        "tank alert"
+        "tank footer"
+        "updated updated";
+      align-content: center;
+    }
+
+    .header { grid-area: header; }
+    .client-block { grid-area: client; }
+    .tank-wrapper { grid-area: tank; align-items: center; }
+    .stats-row { grid-area: stats; grid-template-columns: 1fr; }
+    .alert-bar { grid-area: alert; }
+    .footer { grid-area: footer; align-self: end; }
+    .last-updated { grid-area: updated; }
+
+    .tank-gauge {
+      gap: clamp(12px, 2.2vh, 24px);
+      padding-top: 0;
+    }
+  }
+
+  @media (min-width: 1040px) {
+    .card {
+      grid-template-columns: minmax(520px, 1.45fr) minmax(360px, 0.85fr);
+      grid-template-areas:
+        "header client"
+        "tank stats"
+        "tank alert"
+        "tank footer"
+        "updated updated";
+    }
+
+    .header {
+      border-bottom: 0;
+      padding-bottom: 0;
+      align-self: center;
+    }
+
+    .client-block {
+      justify-self: stretch;
+    }
+
+    .tank-wrapper {
+      min-height: 520px;
+      gap: clamp(24px, 4vw, 48px);
+    }
+
+    .stats-row {
+      gap: 12px;
+    }
+
+    .stat-card {
+      padding: 18px;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .card {
+      width: min(100% - 16px, 420px);
+      min-height: calc(100vh - 16px);
+      margin: 8px auto;
+      padding: 16px;
+    }
+
+    .client-block,
+    .alert-bar {
+      align-items: flex-start;
+    }
+
+    .header {
+      align-items: flex-start;
+    }
+
+    .header-status {
+      align-items: flex-end;
+      flex-direction: column-reverse;
+      gap: 12px;
+    }
+
+    .mode-btn {
+      min-width: 54px;
+      padding: 9px 10px;
+    }
+
+    .client-id-badge {
+      display: none;
+    }
+
+    .tank-wrapper {
+      gap: 12px;
+      padding: 14px 10px;
+    }
+
+    .stats-row {
+      gap: 8px;
+    }
+
+    .stat-card {
+      padding: 10px 8px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6 10 4 13.5 4 16a8 8 0 0016 0c0-2.5-2-6-8-14z"/></svg>
+      </div>
+      <span class="brand-name">SmartWater</span>
+    </div>
+    <div class="header-status">
+      <div class="mode-toggle" aria-label="Origem dos dados">
+        <button class="mode-btn active" id="mode-mock" type="button" aria-pressed="true">Teste</button>
+        <button class="mode-btn" id="mode-live" type="button" aria-pressed="false">Casa</button>
+      </div>
+      <div class="connection-dot offline" id="conn-dot" title="Usando dados de teste"></div>
+    </div>
+  </div>
+
+  <!-- Cliente -->
+  <div class="client-block">
+    <div class="avatar" id="avatar-initials">N</div>
+    <div class="client-info">
+      <div class="client-label">Casa</div>
+      <div class="client-name" id="client-name">Cliente</div>
+    </div>
+    <div class="client-id-badge">Caixa d'água</div>
+  </div>
+
+  <!-- Caixa d'água + escala -->
+  <div class="tank-wrapper">
+    <!-- Ilustração SVG da caixa -->
+    <div class="tank-visual">
+      <svg class="tank-svg" viewBox="0 0 140 240" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- Gradiente da água ok -->
+          <linearGradient id="grad-ok" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#22d3ee"/>
+            <stop offset="100%" stop-color="#0369a1"/>
+          </linearGradient>
+          <!-- Gradiente água warn -->
+          <linearGradient id="grad-warn" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fcd34d"/>
+            <stop offset="100%" stop-color="#d97706"/>
+          </linearGradient>
+          <!-- Gradiente água crit -->
+          <linearGradient id="grad-crit" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fca5a5"/>
+            <stop offset="100%" stop-color="#dc2626"/>
+          </linearGradient>
+          <!-- Clip da área de água -->
+          <clipPath id="water-clip">
+            <!-- Tampa curvada -->
+            <rect x="15" y="28" width="110" height="202" rx="12"/>
+          </clipPath>
+          <!-- Reflexo lateral -->
+          <linearGradient id="shine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
+            <stop offset="40%" stop-color="rgba(255,255,255,0)"/>
+            <stop offset="100%" stop-color="rgba(0,0,0,0.1)"/>
+          </linearGradient>
+        </defs>
+
+        <!-- PERNAS / Suporte -->
+        <rect x="30" y="225" width="10" height="14" rx="2" fill="#1a2537"/>
+        <rect x="100" y="225" width="10" height="14" rx="2" fill="#1a2537"/>
+        <rect x="26" y="222" width="88" height="5" rx="2" fill="#1a2537"/>
+
+        <!-- CORPO DA CAIXA - Fundo (sombra estrutura) -->
+        <rect x="14" y="27" width="112" height="204" rx="14" fill="#0d1a2e"/>
+
+        <!-- ÁGUA (animada) -->
+        <g clip-path="url(#water-clip)">
+          <rect id="water-body"
+            x="15" y="230" width="110" height="0"
+            fill="url(#grad-ok)"
+            style="transition: y 2s cubic-bezier(0.4,0,0.2,1), height 2s cubic-bezier(0.4,0,0.2,1);"
+          />
+          <!-- Ondinha do topo -->
+          <path id="water-wave"
+            d="M15 230 Q35 226 55 230 Q75 234 95 230 Q115 226 125 230 L125 230 L15 230 Z"
+            fill="rgba(255,255,255,0.25)"
+            style="transition: transform 2s cubic-bezier(0.4,0,0.2,1);"
+          />
+        </g>
+
+        <!-- CORPO - Bordas/Parede -->
+        <rect x="14" y="27" width="112" height="204" rx="14"
+          fill="none"
+          stroke="rgba(255,255,255,0.1)"
+          stroke-width="2"/>
+
+        <!-- Tampa superior - elipse decorativa -->
+        <ellipse cx="70" cy="30" rx="56" ry="8"
+          fill="#131f35"
+          stroke="rgba(255,255,255,0.1)"
+          stroke-width="1.5"/>
+
+        <!-- Borda da tampa superior -->
+        <ellipse cx="70" cy="28" rx="54" ry="6"
+          fill="#1a2e4a"
+          stroke="rgba(255,255,255,0.12)"
+          stroke-width="1"/>
+
+        <!-- Tubo de entrada (cano superior) -->
+        <rect x="58" y="6" width="8" height="24" rx="2" fill="#0d1a2e" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <ellipse cx="62" cy="6" rx="5" ry="2" fill="#1a2e4a" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+
+        <!-- Marcador metálico (rosca) -->
+        <rect x="56" y="18" width="12" height="4" rx="1" fill="#243452" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+
+        <!-- REFLEXO lateral (vidro) -->
+        <rect x="14" y="27" width="112" height="204" rx="14"
+          fill="url(#shine)"/>
+
+        <!-- Linhas de nível marcadas -->
+        <line x1="120" y1="72" x2="126" y2="72" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+        <line x1="120" y1="112" x2="126" y2="112" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+        <line x1="120" y1="152" x2="126" y2="152" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+        <line x1="120" y1="192" x2="126" y2="192" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+
+        <!-- Tubo de saída lateral -->
+        <rect x="0" y="212" width="20" height="7" rx="2" fill="#0d1a2e" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <ellipse cx="1" cy="215" rx="2" ry="3.5" fill="#1a2e4a" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/>
+
+        <!-- Ícone de gota central (quando vazio) -->
+        <text id="empty-icon" x="70" y="140"
+          text-anchor="middle" dominant-baseline="middle"
+          font-size="28" fill="rgba(255,255,255,0.06)"
+          style="transition: opacity 0.5s; user-select:none;">💧</text>
+      </svg>
+    </div>
+
+    <!-- Escala de medição -->
+    <div class="tank-gauge" style="position:relative;">
+      <div class="gauge-scale">
+        <div class="gauge-fill" id="gauge-fill" style="height:0%;"></div>
+      </div>
+      <div class="gauge-tick" data-pct="100">100%</div>
+      <div class="gauge-tick" data-pct="75">75%</div>
+      <div class="gauge-tick" data-pct="50">50%</div>
+      <div class="gauge-tick" data-pct="25">25%</div>
+      <div class="gauge-tick" data-pct="0">0%</div>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-nivel">—</div>
+      <div class="stat-label">Água disponível</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-vol">—</div>
+      <div class="stat-label">Litros na caixa</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-prev">—</div>
+      <div class="stat-label">Distância</div>
+    </div>
+  </div>
+
+  <!-- Alerta principal -->
+  <div class="alert-bar" id="alert-bar">
+    <div class="alert-icon" id="alert-icon">✔</div>
+    <div class="alert-text">
+      <div class="alert-title" id="alert-title">Água em bom nível</div>
+      <div class="alert-sub" id="alert-sub">Sua caixa está abastecida</div>
+    </div>
+    <div class="alert-pct" id="alert-pct">—%</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span class="footer-left">📍 Residência · Fortaleza, CE</span>
+    <span class="footer-right" id="conn-status">Preparando leitura...</span>
+  </div>
+  <div class="last-updated" id="last-updated">Aguardando leitura da caixa...</div>
+</div>
+
+<script>
+  // ── Configuração ─────────────────────────────────────────────
+  const CLIENTE = "Cliente";
+  const TOPIC   = "caixaagua/distancia";
+  const VOL_MAX = 1000; // litros da caixa
+
+  // ── Avatar (iniciais) ────────────────────────────────────────
+  document.getElementById("avatar-initials").textContent =
+    CLIENTE.split(" ").map(p => p[0]).join("").toUpperCase().slice(0,2);
+  document.getElementById("client-name").textContent = CLIENTE;
+
+  // ── Modo de leitura ─────────────────────────────────────────
+  const dot    = document.getElementById("conn-dot");
+  const connSt = document.getElementById("conn-status");
+  const mockBtn = document.getElementById("mode-mock");
+  const liveBtn = document.getElementById("mode-live");
+
+  let client = null;
+  let currentMode = "mock";
+  let mockTimer = null;
+  let liveTimeout = null;
+  let hasLiveData = false;
+
+  function setMode(mode) {
+    currentMode = mode;
+    const isMock = mode === "mock";
+
+    mockBtn.classList.toggle("active", isMock);
+    liveBtn.classList.toggle("active", !isMock);
+    mockBtn.setAttribute("aria-pressed", String(isMock));
+    liveBtn.setAttribute("aria-pressed", String(!isMock));
+
+    if (isMock) startMockMode();
+    else startLiveMode();
+  }
+
+  function startMockMode() {
+    stopMockMode();
+    clearLiveTimeout();
+    dot.classList.add("offline");
+    dot.title = "Usando dados de teste";
+    connSt.textContent = "Teste da tela";
+    pushMockReading();
+    mockTimer = setInterval(pushMockReading, 2500);
+  }
+
+  function stopMockMode() {
+    if (!mockTimer) return;
+    clearInterval(mockTimer);
+    mockTimer = null;
+  }
+
+  function pushMockReading() {
+    const t = Date.now() / 1000;
+    const nivel = Math.round(Math.max(4, Math.min(98, 52 + 38 * Math.sin(t / 8) + 10 * Math.sin(t / 2.9))));
+    const distancia = Math.round((100 - nivel) * 4);
+    updateTank(nivel, distancia);
+  }
+
+  function clearLiveTimeout() {
+    if (!liveTimeout) return;
+    clearTimeout(liveTimeout);
+    liveTimeout = null;
+  }
+
+  function showLiveNotice(title, sub, pctText, state = "crit") {
+    const bar   = document.getElementById("alert-bar");
+    const icon  = document.getElementById("alert-icon");
+    const alertTitle = document.getElementById("alert-title");
+    const alertSub   = document.getElementById("alert-sub");
+    const pct   = document.getElementById("alert-pct");
+
+    bar.className = "alert-bar";
+    if (state) bar.classList.add(state);
+    icon.textContent = "!";
+    alertTitle.textContent = title;
+    alertSub.textContent = sub;
+    pct.textContent = pctText;
+  }
+
+  function clearReadingView(message = "Sem leitura da caixa no momento") {
+    const waterEl = document.getElementById("water-body");
+    const waveEl = document.getElementById("water-wave");
+    const emptyIcon = document.getElementById("empty-icon");
+    const gFill = document.getElementById("gauge-fill");
+
+    waterEl.setAttribute("y", 230);
+    waterEl.setAttribute("height", 0);
+    waterEl.setAttribute("fill", "url(#grad-ok)");
+    waveEl.setAttribute("d", "M15 230 Q35 230 55 230 Q75 230 95 230 Q115 230 125 230 L125 230 L15 230 Z");
+    emptyIcon.style.opacity = "0";
+    gFill.style.height = "0%";
+    gFill.style.background = "linear-gradient(to top, #0369a1, #22d3ee)";
+
+    document.querySelectorAll(".gauge-tick").forEach(t => t.classList.remove("active"));
+    document.getElementById("stat-nivel").textContent = "—";
+    document.getElementById("stat-vol").textContent = "—";
+    document.getElementById("stat-prev").textContent = "—";
+    document.getElementById("last-updated").textContent = message;
+  }
+
+  // ── MQTT ────────────────────────────────────────────────────
+  function startLiveMode() {
+    stopMockMode();
+    clearLiveTimeout();
+    hasLiveData = false;
+    dot.classList.add("offline");
+    dot.title = "Buscando leitura da caixa";
+    connSt.textContent = "Buscando leitura da caixa...";
+    clearReadingView("Aguardando leitura da caixa");
+    showLiveNotice("Aguardando leitura", "Estamos buscando a informação da sua caixa", "—", "warn");
+
+    if (!window.mqtt) {
+      connSt.textContent = "Leitura indisponível";
+      dot.title = "Leitura indisponível";
+      clearReadingView("Sem leitura da caixa no momento");
+      showLiveNotice("Não foi possível ler a caixa", "Atualize a página e tente novamente", "Erro");
+      return;
+    }
+
+    if (client) {
+      if (client.connected) {
+        clearLiveTimeout();
+        dot.classList.remove("offline");
+        dot.title = "Caixa conectada";
+        connSt.textContent = "Caixa conectada";
+        clearReadingView("Aguardando nova leitura da caixa");
+        showLiveNotice("Aguardando leitura", "A caixa está conectada, mas ainda não enviou o nível", "—", "warn");
+      } else {
+        liveTimeout = setTimeout(() => {
+          if (currentMode !== "live" || hasLiveData || client?.connected) return;
+          dot.classList.add("offline");
+          dot.title = "Sem leitura da caixa";
+          connSt.textContent = "Sem leitura da caixa";
+          clearReadingView("Sem leitura da caixa no momento");
+          showLiveNotice("Sem leitura da caixa", "Verifique se o medidor está ligado", "—");
+        }, 8000);
+      }
+      return;
+    }
+
+    liveTimeout = setTimeout(() => {
+      if (currentMode !== "live" || hasLiveData || client?.connected) return;
+      dot.classList.add("offline");
+      dot.title = "Sem leitura da caixa";
+      connSt.textContent = "Sem leitura da caixa";
+      clearReadingView("Sem leitura da caixa no momento");
+      showLiveNotice("Sem leitura da caixa", "Verifique se o medidor está ligado", "—");
+    }, 8000);
+
+    client = mqtt.connect("wss://638b4e2180ba41a885991568e61ccf9c.s1.eu.hivemq.cloud:8884/mqtt",
+      {
+        username: "ESP32",
+        password: "aE12345678"
+      });
+
+    client.on("connect", () => {
+      client.subscribe(TOPIC);
+      clearLiveTimeout();
+      if (currentMode !== "live") return;
+      dot.classList.remove("offline");
+      dot.title = "Caixa conectada";
+      connSt.textContent = "Caixa conectada";
+      if (!hasLiveData) {
+        clearReadingView("Aguardando nova leitura da caixa");
+        showLiveNotice("Aguardando leitura", "A caixa está conectada, mas ainda não enviou o nível", "—", "warn");
+      }
+    });
+
+    client.on("error", () => {
+      clearLiveTimeout();
+      if (currentMode !== "live") return;
+      dot.classList.add("offline");
+      dot.title = "Sem leitura da caixa";
+      connSt.textContent = "Sem leitura da caixa";
+      clearReadingView("Sem leitura da caixa no momento");
+      showLiveNotice("Não foi possível ler a caixa", "Verifique a internet e tente novamente", "Erro");
+    });
+
+    client.on("message", (topic, msg) => {
+      if (currentMode !== "live") return;
+      clearLiveTimeout();
+      hasLiveData = true;
+      const dados = JSON.parse(msg.toString());
+      console.log(dados.porcentagem);
+      if (Object.keys(dados).length) updateTank(Math.min(100, Math.max(0, dados.porcentagem)), dados.distancia);
+    });
+  }
+
+  mockBtn.addEventListener("click", () => setMode("mock"));
+  liveBtn.addEventListener("click", () => setMode("live"));
+
+  // ── Update visual ────────────────────────────────────────────
+  function updateTank(nivel, distancia) {
+    // Água na SVG: área útil y=28 a y=230 → altura = 202px
+    const TANK_TOP  = 28;
+    const TANK_BOT  = 230;
+    const TANK_H    = TANK_BOT - TANK_TOP; // 202
+    const waterH    = (nivel / 100) * TANK_H;
+    const waterY    = TANK_BOT - waterH;
+
+    const waterEl   = document.getElementById("water-body");
+    const waveEl    = document.getElementById("water-wave");
+    const emptyIcon = document.getElementById("empty-icon");
+
+    waterEl.setAttribute("y", waterY);
+    waterEl.setAttribute("height", waterH);
+
+    // Onda no topo da água
+    const wy = waterY;
+    waveEl.setAttribute("d",
+      `M15 ${wy} Q35 ${wy-4} 55 ${wy} Q75 ${wy+4} 95 ${wy} Q115 ${wy-4} 125 ${wy} L125 ${wy} L15 ${wy} Z`
+    );
+
+    // Ícone de gota quando vazio
+    emptyIcon.style.opacity = nivel < 5 ? "1" : "0";
+
+    // Cor da água
+    let grad = "url(#grad-ok)";
+    if (nivel <= 20)      grad = "url(#grad-crit)";
+    else if (nivel <= 50) grad = "url(#grad-warn)";
+    waterEl.setAttribute("fill", grad);
+
+    // Gauge lateral
+    document.getElementById("gauge-fill").style.height = nivel + "%";
+    const gFill = document.getElementById("gauge-fill");
+    if (nivel <= 20)      gFill.style.background = "linear-gradient(to top, #dc2626, #f87171)";
+    else if (nivel <= 50) gFill.style.background = "linear-gradient(to top, #d97706, #fbbf24)";
+    else                  gFill.style.background = "linear-gradient(to top, #0369a1, #22d3ee)";
+
+    // Tick ativo
+    document.querySelectorAll(".gauge-tick").forEach(t => {
+      t.classList.remove("active");
+      const pct = parseInt(t.dataset.pct);
+      if (Math.abs(pct - Math.round(nivel/25)*25) < 13) t.classList.add("active");
+    });
+
+    // Stats
+    document.getElementById("stat-nivel").textContent = nivel + "%";
+    const vol = Math.round((nivel / 100) * VOL_MAX);
+    document.getElementById("stat-vol").textContent = vol;
+
+    const distanciaCM = distancia / 10;
+    document.getElementById("stat-prev").textContent =
+      Number.isFinite(distanciaCM) ? distanciaCM + " cm" : "—";
+
+    // Alerta
+    const bar   = document.getElementById("alert-bar");
+    const icon  = document.getElementById("alert-icon");
+    const title = document.getElementById("alert-title");
+    const sub   = document.getElementById("alert-sub");
+    const pct   = document.getElementById("alert-pct");
+
+    bar.className = "alert-bar";
+    pct.textContent = nivel + "%";
+
+    if (nivel <= 20) {
+      bar.classList.add("crit");
+      icon.textContent = "⚠";
+      title.textContent = "Pouca água na caixa";
+      sub.textContent = "Abasteça a caixa o quanto antes";
+    } else if (nivel <= 50) {
+      bar.classList.add("warn");
+      icon.textContent = "▲";
+      title.textContent = "Água abaixo do ideal";
+      sub.textContent = "Planeje o abastecimento da caixa";
+    } else {
+      icon.textContent = "✔";
+      title.textContent = "Água em bom nível";
+      sub.textContent = "Sua caixa está abastecida";
+    }
+
+    // Timestamp
+    const now = new Date();
+    document.getElementById("last-updated").textContent =
+      "Atualizado às " + now.toLocaleTimeString("pt-BR");
+  }
+
+  // ── Bolhas CSS (injetadas na SVG) ───────────────────────────
+  function spawnBubble() {
+    const water = document.getElementById("water-body");
+    if (!water) return;
+    const h = parseFloat(water.getAttribute("height") || 0);
+    if (h < 10) return;
+
+    const svg = document.querySelector(".tank-svg");
+    const r = Math.random() * 3 + 2;
+    const x = 20 + Math.random() * 100;
+    const yStart = 230;
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    circle.setAttribute("cx", x);
+    circle.setAttribute("cy", yStart);
+    circle.setAttribute("r", r);
+    circle.setAttribute("fill","rgba(255,255,255,0.25)");
+    circle.setAttribute("clip-path","url(#water-clip)");
+
+    svg.appendChild(circle);
+
+    const dur = 2000 + Math.random() * 1500;
+    const targetY = parseFloat(water.getAttribute("y")) + 10;
+    const start = performance.now();
+
+    function animate(now) {
+      const t = Math.min((now - start) / dur, 1);
+      const eased = 1 - Math.pow(1-t, 2);
+      circle.setAttribute("cy", yStart - (yStart - targetY) * eased);
+      circle.setAttribute("opacity", t < 0.8 ? 0.5 : 0.5 * (1 - (t-0.8)/0.2));
+      if (t < 1) requestAnimationFrame(animate);
+      else circle.remove();
+    }
+    requestAnimationFrame(animate);
+  }
+
+  setInterval(spawnBubble, 600);
+  setMode("mock");
+</script>
+</body>
+</html>
